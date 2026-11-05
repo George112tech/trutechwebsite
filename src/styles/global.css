@@ -1,32 +1,35 @@
-/* Trutech Business design system (Figma: "Trutech Business — Portfolio
-   Redesign"). Near-black pages, amber yellow for actions and highlights,
-   rounded pills and cards. Sora for headings, Manrope for text.
+/* Trutech Business design system. Three colours, as in the Kontour Studios
+   reference: jet black pages, soft white type and pill buttons, flame orange
+   for glows, highlights and labels. Sora for headings, Manrope for text.
    Dark is the default; visitors can switch to light. */
 :root {
-  --amber: #ffa00b;
-  --amber-hover: #ffb43f;
-  --ink: #121212;
+  /* "--amber" is the site's accent: now flame orange. */
+  --amber: #fe5101;
+  --amber-hover: #ff6d2e;
+  --ink: #000000;
   --white: #ffffff;
   /* Older names still used by the admin. */
   --gold-300: var(--amber);
   --gold-500: var(--amber);
 
   --bg: var(--ink);
-  --surface: #1c1c1c; /* cards */
-  --surface-2: #242424; /* raised panels, image placeholders */
+  --surface: #0f0f0f; /* cards */
+  --surface-2: #1a1a1a; /* raised panels, image placeholders */
   --text: var(--white);
-  --text-muted: #a3a3a3; /* 7.9:1 on the page */
-  --border: #2e2e2e;
-  --accent: var(--amber); /* text accents: 8.7:1 on the page */
+  --text-muted: #a3a3a3; /* 8.5:1 on the page */
+  --border: #262626;
+  --accent: var(--amber); /* text accents: 6.4:1 on the page */
   --accent-strong: var(--amber);
   --ring: var(--amber);
-  --header-bg: rgb(28 28 28 / 0.88);
-  --menu-bg: #1c1c1c;
-  --field-bg: #1c1c1c;
-  --inverse-bg: var(--amber); /* primary buttons: ink on amber, 8.7:1 */
-  --inverse-bg-hover: var(--amber-hover);
+  /* The orange light behind the hero and page titles. */
+  --glow: rgb(254 81 1 / 0.55);
+  --header-bg: rgb(0 0 0 / 0.78);
+  --menu-bg: #0f0f0f;
+  --field-bg: #0f0f0f;
+  --inverse-bg: var(--white); /* primary buttons: black on white, 21:1 */
+  --inverse-bg-hover: var(--amber); /* black on flame orange, 6.4:1 */
   --inverse-text: var(--ink);
-  --skel: #222222;
+  --skel: #1c1c1c;
   --skel-hi: rgb(255 255 255 / 0.06);
 
   --font-display: 'Sora Variable', 'Segoe UI', system-ui, sans-serif;
@@ -39,22 +42,32 @@
   --shadow-lg: 0 30px 70px -30px rgb(0 0 0 / 0.8);
   --max: 1200px;
   --gutter: clamp(16px, 4vw, 40px);
+  --header-h: 72px; /* the bar at the top (Header.astro) */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   color-scheme: dark;
 }
 
+@media (max-width: 900px) {
+  :root {
+    --header-h: 64px;
+  }
+}
+
 /* Light theme (from the theme button in the header). */
 :root[data-theme='light'] {
-  --bg: #f6f5f2;
-  --surface: #ffffff;
-  --surface-2: #eeece7;
+  --bg: #ffffff;
+  --surface: #f6f6f6;
+  --surface-2: #ececec;
   --text: var(--ink);
-  --text-muted: #5c5a55; /* 6.6:1 */
-  --border: #e3e0d9;
-  --accent: #a35f00; /* amber darkened for text on light: 5:1 */
-  --accent-strong: #a35f00;
-  --ring: #a35f00;
-  --header-bg: rgb(255 255 255 / 0.9);
+  --text-muted: #555555; /* 7.5:1 */
+  --border: #e2e2e2;
+  --accent: #b83a00; /* flame orange darkened for text: 5.8:1 on white */
+  --accent-strong: #b83a00;
+  --ring: #b83a00;
+  --glow: rgb(254 81 1 / 0.28);
+  --inverse-bg: var(--ink);
+  --inverse-text: var(--white);
+  --header-bg: rgb(255 255 255 / 0.85);
   --menu-bg: #ffffff;
   --field-bg: #ffffff;
   --skel: #e8e6e1;
@@ -220,9 +233,9 @@ h2,
 h3,
 .display {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
   margin: 0 0 0.4em;
   text-wrap: balance;
 }
@@ -251,24 +264,16 @@ p {
   color: var(--text-muted);
   max-width: 60ch;
 }
-/* Section label: two dots and a word, as in the design. */
+/* Section label: a few words in flame orange ("Marketing agency" in the
+   reference). */
 .eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  color: var(--text);
-  margin-bottom: 16px;
-}
-.eyebrow::before {
-  content: '';
-  width: 26px;
-  height: 14px;
-  flex: none;
-  background:
-    radial-gradient(circle at 7px 7px, var(--text) 6.5px, transparent 7px),
-    radial-gradient(circle at 19px 7px, var(--amber) 6.5px, transparent 7px);
+  color: var(--accent);
+  margin-bottom: 14px;
 }
 .muted {
   color: var(--text-muted);
@@ -304,13 +309,15 @@ p {
 .btn:active {
   transform: translateY(1px);
 }
-/* Amber pill. With an icon, the arrow sits in a dark circle on the right. */
+/* White pill ("Start a Project"); flame orange on hover. With an icon, the
+   arrow sits in a black circle on the right. */
 .btn-primary {
   background: var(--inverse-bg);
   color: var(--inverse-text);
 }
 .btn-primary:hover {
   background: var(--inverse-bg-hover);
+  color: var(--ink);
 }
 .btn-primary:has(> svg:last-child) {
   padding-right: 5px;
@@ -324,6 +331,11 @@ p {
   background: var(--ink);
   color: var(--white);
 }
+/* In light mode the pill is black, so its arrow sits in orange. */
+:root[data-theme='light'] .btn-primary > svg:last-child {
+  background: var(--amber);
+  color: var(--ink);
+}
 .btn-light {
   background: var(--white);
   color: var(--ink);
@@ -332,7 +344,7 @@ p {
   background: var(--amber);
 }
 .btn-ghost {
-  border-color: currentColor;
+  border-color: var(--border);
   color: inherit;
   background: transparent;
 }
@@ -400,7 +412,7 @@ p {
   list-style: none;
 }
 
-/* Small amber circle with an arrow, used on rows and cards. */
+/* Small flame-orange circle with an arrow, used on rows and cards. */
 .arrow-badge {
   flex: none;
   display: inline-grid;

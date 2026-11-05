@@ -11,17 +11,16 @@ const ease = [0.22, 1, 0.36, 1] as const;
 const all = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll<T>(sel)];
 const done = (els: Element[]) => els.forEach((el) => el.classList.add('intro-done'));
 
-/** Badge, title and text rise in one after another; the sides slide in. */
+/** Label, title, text and buttons rise in one after another; the card and
+ * numbers on the right slide in, then the giant word comes up. */
 function heroIntro() {
   const lines = all('.hero [data-intro="line"]');
-  const left = all('.hero [data-intro="left"]');
   const right = all('.hero [data-intro="right"]');
-  const pills = all('.hero .skill');
-  done([...lines, ...left, ...right]);
-  animate(lines, { opacity: [0, 1], y: [22, 0] }, { duration: 0.6, ease, delay: stagger(0.09) });
-  animate(left, { opacity: [0, 1], x: [-28, 0] }, { duration: 0.7, ease, delay: 0.35 });
-  animate(right, { opacity: [0, 1], x: [28, 0] }, { duration: 0.7, ease, delay: 0.35 });
-  animate(pills, { opacity: [0, 1], scale: [0.8, 1] }, { type: 'spring', stiffness: 380, damping: 22, delay: stagger(0.05, { startDelay: 0.55 }) });
+  const word = all('.hero [data-intro="word"]');
+  done([...lines, ...right, ...word]);
+  if (lines.length) animate(lines, { opacity: [0, 1], y: [22, 0] }, { duration: 0.6, ease, delay: stagger(0.09) });
+  if (right.length) animate(right, { opacity: [0, 1], x: [28, 0] }, { duration: 0.7, ease, delay: 0.35 });
+  if (word.length) animate(word, { opacity: [0, 1], y: [40, 0] }, { duration: 0.9, ease, delay: 0.2 });
 }
 
 /** The glow behind the photo, and the photo's drift on scroll. (The photo's

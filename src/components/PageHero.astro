@@ -11,7 +11,7 @@ interface Props {
 const { eyebrow, title, lead, leadText } = Astro.props;
 ---
 <section class="page-hero">
-  <span class="watermark" aria-hidden="true">TRUTECH</span>
+  <p class="wordmark" aria-hidden="true"><Text k="home.wordmark" /></p>
   <div class="container inner">
     <Text as="p" class="eyebrow" k={eyebrow} />
     <Text as="h1" k={title} />
@@ -20,29 +20,40 @@ const { eyebrow, title, lead, leadText } = Astro.props;
   </div>
 </section>
 <style>
+  /* As on the home page: an orange glow on the left, the title in white, and
+     the giant brand word along the bottom edge, half out of sight. */
   .page-hero {
     position: relative;
     overflow: hidden;
-    padding-block: clamp(56px, 9vw, 104px) clamp(48px, 7vw, 80px);
+    margin-top: calc(-1 * var(--header-h));
+    padding-block: calc(var(--header-h) + clamp(48px, 8vw, 96px)) clamp(110px, 13vw, 200px);
+    background:
+      radial-gradient(48% 70% at 14% 45%, var(--glow), transparent 72%),
+      radial-gradient(36% 60% at 70% 100%, var(--glow), transparent 72%),
+      var(--bg);
     border-bottom: 1px solid var(--border);
   }
-  /* Outlined brand word behind the title, as in the home hero. */
-  .watermark {
+  .wordmark {
     position: absolute;
-    right: -2vw;
-    bottom: -0.18em;
-    font: 700 clamp(6rem, 18vw, 15rem) / 1 var(--font-display);
-    letter-spacing: -0.04em;
-    color: transparent;
-    -webkit-text-stroke: 1.5px var(--border);
+    left: 50%;
+    bottom: 0;
+    transform: translate(-50%, 46%);
+    margin: 0;
+    font: 700 clamp(4.5rem, 19.6vw, 17.5rem) / 0.8 var(--font-display);
+    letter-spacing: -0.05em;
+    white-space: nowrap;
+    color: var(--text);
     pointer-events: none;
     user-select: none;
   }
   .inner {
     position: relative;
+    z-index: 1;
   }
   h1 {
     max-width: 16ch;
+    font-weight: 500;
+    letter-spacing: -0.035em;
   }
   .lead {
     margin-bottom: 0;

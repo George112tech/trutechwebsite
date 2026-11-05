@@ -13,17 +13,33 @@ const links = [
   { href: 'contact/', key: 'nav.contact' },
 ];
 const current = (href: string) => (href ? path.startsWith('/' + href) : path === '/');
+// Links either side of the logo, as in the design.
+const left = links.slice(0, 3);
+const right = links.slice(3);
 ---
 <header class="site-header" data-header>
-  <div class="container">
-    <div class="bar">
-      <a href={base} class="home" aria-label="Trutech Business home">
-        <Logo />
-      </a>
-      <nav aria-label="Main">
-        <ul id="nav-links" data-nav>
+  <div class="container bar">
+    <nav class="side-nav left" aria-label="Main">
+      <ul>
+        {
+          left.map((l) => (
+            <li>
+              <a href={base + l.href} aria-current={current(l.href) ? 'page' : undefined}>
+                <Text k={l.key} />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <a href={base} class="home" aria-label="Trutech Business home">
+      <Logo />
+    </a>
+    <div class="right">
+      <nav class="side-nav" aria-label="More">
+        <ul>
           {
-            links.map((l) => (
+            right.map((l) => (
               <li>
                 <a href={base + l.href} aria-current={current(l.href) ? 'page' : undefined}>
                   <Text k={l.key} />
@@ -33,19 +49,30 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
           }
         </ul>
       </nav>
-      <div class="actions">
-        <button class="icon-btn theme" type="button" aria-pressed="false" data-theme-toggle>
-          <span class="to-light"><Icon name="sun" size={18} /></span>
-          <span class="to-dark"><Icon name="moon" size={18} /></span>
-          <span class="sr-only">Light mode</span>
-        </button>
-        <a class="btn btn-light talk" href={base + 'contact/'}><Text k="nav.cta" /></a>
-        <button class="icon-btn menu" type="button" aria-expanded="false" aria-controls="nav-links" data-menu>
-          <span class="open"><Icon name="menu" size={20} label="Open menu" /></span>
-          <span class="shut"><Icon name="close" size={20} label="Close menu" /></span>
-        </button>
-      </div>
+      <button class="icon-btn theme" type="button" aria-pressed="false" data-theme-toggle>
+        <span class="to-light"><Icon name="sun" size={18} /></span>
+        <span class="to-dark"><Icon name="moon" size={18} /></span>
+        <span class="sr-only">Light mode</span>
+      </button>
+      <button class="icon-btn menu" type="button" aria-expanded="false" aria-controls="nav-links" data-menu>
+        <span class="open"><Icon name="menu" size={20} label="Open menu" /></span>
+        <span class="shut"><Icon name="close" size={20} label="Close menu" /></span>
+      </button>
     </div>
+    <!-- Phones: every link in one menu under the bar. -->
+    <nav class="menu-nav" aria-label="Menu">
+      <ul id="nav-links" data-nav>
+        {
+          links.map((l) => (
+            <li>
+              <a href={base + l.href} aria-current={current(l.href) ? 'page' : undefined}>
+                <Text k={l.key} />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
   </div>
 </header>
 
@@ -82,30 +109,30 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
 </script>
 
 <style>
-  /* Floating pill bar that stays at the top while scrolling. */
+  /* A thin bar across the top: links either side of the logo in the middle.
+     Clear over the page at the top, black once the page scrolls. */
   .site-header {
     position: sticky;
     top: 0;
     z-index: 50;
-    padding-top: 16px;
+    transition:
+      background-color 0.3s,
+      border-color 0.3s;
+    border-bottom: 1px solid transparent;
+  }
+  .is-scrolled {
+    background: var(--header-bg);
+    border-bottom-color: var(--border);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
   .bar {
     position: relative;
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
-    min-height: 64px;
-    padding: 10px 10px 10px 14px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--header-bg);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    transition: box-shadow 0.25s;
-  }
-  .is-scrolled .bar {
-    box-shadow: var(--shadow);
+    min-height: var(--header-h);
   }
   .home {
     display: inline-flex;
@@ -113,10 +140,16 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
     min-height: 44px;
     text-decoration: none;
   }
+  .right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+  }
   ul {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -125,21 +158,20 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
     display: inline-flex;
     align-items: center;
     min-height: 44px;
-    padding: 0 14px;
-    font-weight: 600;
-    font-size: 0.95rem;
+    padding: 0 12px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     text-decoration: none;
-    border-radius: 999px;
     transition: color 0.2s;
+  }
+  .left li:first-child a {
+    padding-left: 0;
   }
   ul a:hover,
   ul a[aria-current='page'] {
     color: var(--accent);
-  }
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
   .icon-btn {
     display: inline-grid;
@@ -165,16 +197,11 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
   :global([data-theme='light']) .theme .to-dark {
     display: inline;
   }
-  :global([data-theme='light']) .talk {
-    background: var(--ink);
-    color: var(--white);
-  }
-  .talk {
-    min-height: 44px;
-    padding: 0 20px;
+  .menu,
+  .menu-nav {
+    display: none;
   }
   .menu {
-    display: none;
     background: var(--amber);
     color: var(--ink);
   }
@@ -186,16 +213,26 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
     display: none;
   }
   @media (max-width: 900px) {
+    .bar {
+      grid-template-columns: 1fr auto;
+    }
+    .side-nav {
+      display: none;
+    }
+    .home {
+      order: -1;
+    }
     .menu {
       display: inline-grid;
     }
-    .talk {
-      display: none;
+    .menu-nav {
+      display: block;
+      grid-column: 1 / -1;
     }
-    ul {
+    .menu-nav ul {
       display: none;
       position: absolute;
-      top: calc(100% + 10px);
+      top: calc(100% + 6px);
       left: 0;
       right: 0;
       flex-direction: column;
@@ -207,7 +244,7 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
       border-radius: var(--radius);
       box-shadow: var(--shadow-lg);
     }
-    .is-open ul {
+    .is-open .menu-nav ul {
       display: flex;
     }
     .is-open .menu .open {
@@ -216,13 +253,14 @@ const current = (href: string) => (href ? path.startsWith('/' + href) : path ===
     .is-open .menu .shut {
       display: inline;
     }
-    ul a {
+    .menu-nav a {
       min-height: 48px;
       padding: 0 16px;
-      font-size: 1.05rem;
+      font-size: 0.9rem;
     }
-    ul a[aria-current='page'] {
+    .menu-nav a[aria-current='page'] {
       background: var(--surface-2);
+      border-radius: 12px;
     }
   }
 </style>

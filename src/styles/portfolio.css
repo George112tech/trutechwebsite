@@ -7,7 +7,7 @@
   aspect-ratio: 16 / 10;
   border-radius: 16px;
   overflow: hidden;
-  background: linear-gradient(135deg, #242424 0%, #2c2412 60%, #402800 100%);
+  background: linear-gradient(135deg, #141414 0%, #1f0e05 60%, #3d1400 100%);
   isolation: isolate;
 }
 .cover > img {
