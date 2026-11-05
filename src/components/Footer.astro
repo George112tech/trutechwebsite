@@ -64,12 +64,29 @@ const year = new Date().getFullYear();
     <span>© {year} {site.brand}. <Text k="footer.rights" /></span>
     <nav class="legal-links" aria-label="Legal"><a href={base + 'terms/'}><Text k="footer.terms" /></a><a href={base + 'privacy/'}><Text k="footer.privacy" /></a></nav>
   </div>
+  <p class="footer-word" aria-hidden="true"><Text k="home.wordmark" /></p>
 </footer>
 <style>
   .site-footer {
-    padding-block: 64px 28px;
-    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+    padding-top: 64px;
+    background: var(--bg);
     border-top: 1px solid var(--border);
+  }
+  /* The brand word across the bottom, fading out of flame orange. */
+  .footer-word {
+    margin: 24px 0 -0.14em;
+    text-align: center;
+    font: 700 clamp(4.5rem, 19.6vw, 17.5rem) / 0.9 var(--font-display);
+    letter-spacing: -0.05em;
+    white-space: nowrap;
+    background: linear-gradient(180deg, var(--amber), transparent 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    pointer-events: none;
+    user-select: none;
   }
   .cols {
     display: grid;

@@ -4,7 +4,7 @@
 //
 // Kinds:
 //   line  one line
-//   hl    one line; words between *stars* are shown in amber
+//   hl    one line; words between *stars* are shown in orange
 //   text  a few lines (line breaks kept)
 //   paras paragraphs, separated by a blank line
 //   list  one item per line
@@ -196,7 +196,7 @@ Our services are for businesses, schools and adults. Work for schools is arrange
 
 If we change this policy, we’ll update it on this page and change the date at the top.`;
 
-const HL = 'Words between *stars* are shown in yellow.';
+const HL = 'Words between *stars* are shown in orange.';
 const LIST = 'One per line.';
 
 export const GROUPS: Group[] = [
@@ -212,7 +212,6 @@ export const GROUPS: Group[] = [
       f('nav.work', 'Menu: Work', 'Work'),
       f('nav.about', 'Menu: About', 'About'),
       f('nav.contact', 'Menu: Contact', 'Contact'),
-      f('nav.cta', 'Menu button', 'Let’s Talk'),
       f('footer.explore', 'Footer heading: links', 'Explore'),
       f('footer.contact', 'Footer heading: contact', 'Get in touch'),
       f('footer.follow', 'Footer heading: social', 'Follow'),
@@ -225,17 +224,14 @@ export const GROUPS: Group[] = [
     id: 'home-hero',
     title: 'Home page: top section',
     fields: [
-      f('home.badge', 'Small badge above the title', 'Web developer · Designer · IT support'),
+      f('home.badge', 'Small orange line above the title', 'Web developer · Designer · IT support'),
       f('home.title', 'Main title', 'Ideas into *Reality*', 'hl', HL),
       f('home.sub', 'Line under the title', 'Digital solutions practitioner based in Ghana'),
-      f('home.follow', 'Social links label', 'Follow me on'),
-      f('home.proofTitle', 'Highlight on the left', '5 service areas'),
-      f('home.proofText', 'Text under the highlight', 'Websites, systems, commerce,\nbranding and IT support', 'text'),
-      f('home.quote', 'Quote on the right', 'Practical digital solutions for businesses, schools and people.', 'text'),
-      f('home.skills', 'Skill pills', 'Websites\n*Systems*\n*Graphic design*\nIT support', 'list', `${LIST} Put a skill between *stars* to fill it in yellow.`),
-      f('home.ctaWork', 'Yellow button', 'See my work'),
-      f('home.ctaHire', 'Outline button', 'Hire me'),
-      f('home.available', 'Round badge (top right)', 'Available\nfor work', 'text'),
+      f('home.ctaHire', 'White button', 'Hire me'),
+      f('home.ctaWork', 'Outline button', 'See my work'),
+      f('home.proofTitle', 'Card on the right: title', '5 service areas'),
+      f('home.proofText', 'Card on the right: text', 'Websites, systems, commerce,\nbranding and IT support', 'text'),
+      f('home.wordmark', 'Giant word behind your photo (also at the top of other pages and in the footer)', 'TRUTECH'),
     ],
   },
   {
@@ -253,7 +249,7 @@ export const GROUPS: Group[] = [
         'I am a technology entrepreneur and digital solutions practitioner working across web development, software solutions, graphic design, IT support and educational technology. Everything I build starts from a real need: what problem it solves, how people will use it, and how it will be run.',
         'text',
       ),
-      f('home.about.more', 'About: yellow button', 'More about me'),
+      f('home.about.more', 'About: white button', 'More about me'),
       f('home.about.contact', 'About: outline button', 'Contact me'),
       f('home.about.chips', 'About: pills on the photo card', 'Websites\nSystems', 'list', LIST),
       f('home.work.label', 'Selected work: label', 'Selected Work'),
@@ -261,14 +257,14 @@ export const GROUPS: Group[] = [
       f('home.work.more', 'Selected work: button', 'View all work'),
       f('home.process.label', 'Process: label', 'How I Work'),
       f('home.process.title', 'Process: title', 'From the first conversation *to launch*', 'hl', HL),
-      f('home.cta.title', 'Yellow box: title', 'Have an idea? Let’s turn it into reality.'),
+      f('home.cta.title', 'Closing section: title', 'Have an idea? Let’s turn it into reality.'),
       f(
         'home.cta.text',
-        'Yellow box: text',
+        'Closing section: text',
         'Tell me what you need, whether it’s a website, a system, a brand or help with your devices, and I’ll get back to you within a day.',
         'text',
       ),
-      f('home.cta.button', 'Yellow box: button', 'Start a project'),
+      f('home.cta.button', 'Closing section: button', 'Start a project'),
     ],
   },
   {

@@ -1099,7 +1099,7 @@ async function textsForm() {
   const saved: Record<string, string> = data?.data?.texts ?? {};
   const valueOf = (f: Field) => (typeof saved[f.key] === 'string' && saved[f.key].trim() ? saved[f.key] : f.value);
   const HELP: Record<string, string> = {
-    hl: 'Words between *stars* are shown in yellow.',
+    hl: 'Words between *stars* are shown in orange.',
     list: 'One per line.',
     paras: 'Leave an empty line between paragraphs.',
     md: 'Use ## for a heading, - for a list item, **bold** and [link text](https://…).',
