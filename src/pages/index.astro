@@ -232,10 +232,7 @@ const chips = tl('home.about.chips');
     margin-top: calc(-1 * var(--header-h));
     padding-top: var(--header-h);
     min-height: clamp(640px, 100svh, 940px);
-    background:
-      radial-gradient(46% 64% at 18% 50%, var(--glow), transparent 72%),
-      radial-gradient(30% 52% at 50% 80%, var(--glow), transparent 72%),
-      var(--bg);
+    background: var(--bg);
   }
   .hero-grid,
   .stage {
@@ -390,18 +387,24 @@ const chips = tl('home.about.chips');
   .wordmark :global(span) {
     display: inline-block;
   }
-  /* A soft orange light right behind the photo (breathes; motion.ts). */
+  /* A soft orange light right behind the photo, with no hard edge
+     (breathes; motion.ts). The only glow in the hero. */
   .glow {
     position: absolute;
     z-index: 0;
-    bottom: 6%;
+    bottom: 4%;
     left: 50%;
-    width: min(70vw, 720px);
+    width: min(120vw, 620px);
     aspect-ratio: 1;
     transform: translateX(-50%);
     border-radius: 999px;
-    background: radial-gradient(closest-side, rgb(254 81 1 / 0.75), rgb(254 81 1 / 0.25) 55%, transparent);
-    filter: blur(28px);
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--amber) 55%, transparent),
+      color-mix(in srgb, var(--amber) 22%, transparent) 55%,
+      transparent
+    );
+    filter: blur(24px);
     pointer-events: none;
   }
   /* The cut-out photo stands on the bottom edge, in front of the word, with
@@ -465,10 +468,6 @@ const chips = tl('home.about.chips');
       display: flex;
       flex-direction: column;
       min-height: 0;
-      background:
-        radial-gradient(70% 40% at 20% 18%, var(--glow), transparent 72%),
-        radial-gradient(60% 34% at 50% 62%, var(--glow), transparent 72%),
-        var(--bg);
     }
     .hero-grid {
       display: contents;
@@ -498,9 +497,6 @@ const chips = tl('home.about.chips');
     }
     .wordmark {
       font-size: 19.5vw;
-    }
-    .glow {
-      width: 110vw;
     }
   }
   @media (min-width: 560px) and (max-width: 899px) {
