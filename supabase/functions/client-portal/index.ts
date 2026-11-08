@@ -16,7 +16,16 @@ const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const ORIGINS = ['https://ridgevalley111243.github.io', 'http://localhost:4321', 'http://localhost:4599'];
+// Where the website is served from: GitHub Pages, Cloudflare Pages (the main
+// address and each build's own address, like https://21e0341f.trutechwebsite.pages.dev)
+// and local development.
+const ORIGINS = [
+  'https://ridgevalley111243.github.io',
+  'https://trutechwebsite.pages.dev',
+  'http://localhost:4321',
+  'http://localhost:4599',
+];
+const allowed = (origin: string) => ORIGINS.includes(origin) || /^https:\/\/[a-z0-9-]+\.trutechwebsite\.pages\.dev$/.test(origin);
 const LINK_TTL = 60 * 60 * 6; // signed file links last 6 hours
 const MAX_REVIEWS = 50;
 
@@ -37,7 +46,7 @@ type Delivery = {
 function cors(req: Request) {
   const origin = req.headers.get('origin') ?? '';
   return {
-    'Access-Control-Allow-Origin': ORIGINS.includes(origin) ? origin : ORIGINS[0],
+    'Access-Control-Allow-Origin': allowed(origin) ? origin : ORIGINS[0],
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     Vary: 'Origin',
