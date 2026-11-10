@@ -216,22 +216,21 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     return `<article class="file card">${preview}<div class="info"><h3 class="name">${esc(f.name)}</h3><p class="muted">${esc(ext(f.name))} · ${size(f.size)}</p><div class="actions">${actions}</div></div></article>`;
   }
 
-  // View-only files (downloads off): shown inside the page with a watermark,
-  // without links to the files themselves. Websites can't block screenshots;
-  // this makes copies harder to take and marks the ones that are. Images,
-  // videos and PDFs also open full screen, with the same protection.
+  // View-only files (downloads off): shown inside the page, clean, without
+  // links to the files themselves. Websites can't block screenshots; this
+  // makes copies harder to take. Images, videos and PDFs also open full
+  // screen, with the same protection.
   function protectedCard(f: FileItem, kind: string, url: string) {
-    const wm = '<div class="wm" aria-hidden="true"></div>';
     const viewable = ['image', 'video', 'pdf'].includes(kind) && url;
     const preview =
       kind === 'image' && url
-        ? `<div class="preview guarded zoomable" data-view role="button" tabindex="0" aria-label="${esc(W.fullScreen)}: ${esc(f.name)}"><canvas data-image="${url}" role="img" aria-label="${esc(f.name)}"></canvas>${wm}</div>`
+        ? `<div class="preview guarded zoomable" data-view role="button" tabindex="0" aria-label="${esc(W.fullScreen)}: ${esc(f.name)}"><canvas data-image="${url}" role="img" aria-label="${esc(f.name)}"></canvas></div>`
         : kind === 'video' && url
-          ? `<div class="preview guarded"><video src="${url}" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture preload="metadata"></video>${wm}</div>`
+          ? `<div class="preview guarded"><video src="${url}" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture preload="metadata"></video></div>`
           : kind === 'audio' && url
             ? `<div class="preview icon">♪<audio src="${url}" controls controlslist="nodownload noplaybackrate" preload="none"></audio></div>`
             : kind === 'pdf' && url
-              ? `<div class="preview guarded pdf"><span class="ext">PDF</span>${wm}</div>`
+              ? `<div class="preview guarded pdf"><span class="ext">PDF</span></div>`
               : `<div class="preview icon"><span class="ext">${esc(ext(f.name))}</span></div>`;
     const action = viewable
       ? `<button class="btn btn-ghost" type="button" data-view>${esc(kind === 'pdf' ? W.viewPdf : W.fullScreen)}</button>`
@@ -242,19 +241,11 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     return `<article class="file card"${data}>${preview}<div class="info"><h3 class="name">${esc(f.name)}</h3><p class="muted">${esc(ext(f.name))} · ${size(f.size)} · ${esc(W.viewOnly)}</p><div class="actions">${action}</div></div></article>`;
   }
 
-  function protect(d: Delivery) {
+  function protect() {
     const shell = $('.shell');
     shell.classList.add('protected');
-    const mark = `${d.client_name} · Trutech Business · ${date(new Date().toISOString())}`;
-    const tile = (color: string) =>
-      `url("data:image/svg+xml,${encodeURIComponent(
-        `<svg xmlns='http://www.w3.org/2000/svg' width='320' height='180'><text x='10' y='110' transform='rotate(-24 160 90)' fill='${color}' font-family='Montserrat,Arial,sans-serif' font-size='15' font-weight='600'>${mark.replace(/[<&'"]/g, '')}</text></svg>`,
-      )}")`;
-    shell.style.setProperty('--wm', tile('rgba(255,255,255,0.42)'));
-    shell.style.setProperty('--wm-dark', tile('rgba(10,25,49,0.32)'));
-
-    // Images are drawn on a canvas with the watermark baked in, so there's no
-    // image to save, drag or open on its own.
+    // Images are drawn on a canvas, so there's no image to save, drag or open
+    // on its own.
     const images = new Map<string, Promise<HTMLImageElement>>();
     const load = (url: string) => {
       if (!images.has(url))
@@ -269,31 +260,15 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
         );
       return images.get(url)!;
     };
-    const drawMarked = (canvas: HTMLCanvasElement, img: HTMLImageElement, maxWidth: number) => {
+    const draw = (canvas: HTMLCanvasElement, img: HTMLImageElement, maxWidth: number) => {
       const scale = Math.min(1, maxWidth / img.naturalWidth);
       canvas.width = Math.round(img.naturalWidth * scale);
       canvas.height = Math.round(img.naturalHeight * scale);
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      ctx.save();
-      ctx.font = `600 ${Math.max(14, Math.round(canvas.width / 34))}px Montserrat, Arial, sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.strokeStyle = 'rgba(10,25,49,0.35)';
-      ctx.lineWidth = Math.max(1, canvas.width / 1600);
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate(-0.42);
-      const step = Math.max(120, canvas.width / 5);
-      for (let y = -canvas.height; y < canvas.height; y += step) {
-        for (let x = -canvas.width; x < canvas.width; x += ctx.measureText(mark).width + 60) {
-          ctx.fillText(mark, x, y);
-          ctx.strokeText(mark, x, y);
-        }
-      }
-      ctx.restore();
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
     document.querySelectorAll<HTMLCanvasElement>('canvas[data-image]').forEach((canvas) => {
       load(canvas.dataset.image!)
-        .then((img) => drawMarked(canvas, img, 1600))
+        .then((img) => draw(canvas, img, 1600))
         .catch(() => {});
     });
 
@@ -310,8 +285,8 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
       }
     });
 
-    // Full-screen view. It stays inside this page, so the watermark, the
-    // blur and the blocked right-click, saving and printing all still apply.
+    // Full-screen view. It stays inside this page, so the blur and the
+    // blocked right-click, saving and printing all still apply.
     const viewer = document.createElement('div');
     viewer.className = 'viewer';
     viewer.hidden = true;
@@ -352,7 +327,6 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
       viewer.setAttribute('aria-label', name);
       viewer.querySelector('[data-v-name]')!.textContent = name;
       viewer.classList.toggle('can-zoom', kind === 'image');
-      const wm = '<div class="wm" aria-hidden="true"></div>';
       if (kind === 'image') {
         stage.innerHTML = `<canvas role="img" aria-label="${esc(name)}"></canvas>`;
         canvas = stage.querySelector('canvas')!;
@@ -360,15 +334,15 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
         load(url)
           .then((img) => {
             if (c !== canvas) return;
-            drawMarked(c, img, 2400);
+            draw(c, img, 2400);
             fit();
           })
           .catch(() => {});
       } else if (kind === 'video') {
-        stage.innerHTML = `<div class="v-media"><video src="${esc(url)}" controls autoplay playsinline controlslist="nodownload noplaybackrate noremoteplayback nofullscreen" disablepictureinpicture></video>${wm}</div>`;
+        stage.innerHTML = `<div class="v-media"><video src="${esc(url)}" controls autoplay playsinline controlslist="nodownload noplaybackrate noremoteplayback nofullscreen" disablepictureinpicture></video></div>`;
       } else {
         // PDFs show without the viewer's download and print toolbar.
-        stage.innerHTML = `<div class="v-media v-pdf"><iframe src="${esc(url)}#toolbar=0&navpanes=0&statusbar=0&view=FitH" title="${esc(name)}"></iframe>${wm}</div>`;
+        stage.innerHTML = `<div class="v-media v-pdf"><iframe src="${esc(url)}#toolbar=0&navpanes=0&statusbar=0&view=FitH" title="${esc(name)}"></iframe></div>`;
       }
       viewer.hidden = false;
       document.documentElement.classList.add('viewing');
@@ -438,6 +412,12 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     });
     addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && ['s', 'p'].includes(e.key.toLowerCase())) e.preventDefault();
+      // The screenshot shortcuts on computers start with Cmd+Shift (Mac) or
+      // Win+Shift (Windows): hide the files while those keys are held.
+      if (e.metaKey && e.shiftKey) shield(true);
+    });
+    addEventListener('keyup', (e) => {
+      if (['Meta', 'Shift'].includes(e.key) && shell.classList.contains('shielded') && document.hasFocus()) setTimeout(() => shield(false), 1500);
     });
   }
 
@@ -547,7 +527,7 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
       : links.length
         ? ''
         : `<p class="muted">${esc(W.noFiles)}</p>`;
-    if (!d.allow_download) protect(d);
+    if (!d.allow_download) protect();
     history(d.reviews);
     setupForm(d);
     show('ready');
@@ -788,15 +768,6 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     object-fit: contain;
     pointer-events: none;
   }
-  .files :global(.wm) {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image: var(--wm), var(--wm-dark);
-    background-position:
-      0 0,
-      160px 90px;
-  }
   .files :global(.guarded video) {
     position: relative;
   }
@@ -929,15 +900,6 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     height: 100%;
     border: 0;
     background: #fff;
-  }
-  .shell :global(.viewer .wm) {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image: var(--wm), var(--wm-dark);
-    background-position:
-      0 0,
-      160px 90px;
   }
   .shielded :global(.v-stage) {
     filter: blur(28px) saturate(0.4);

@@ -573,7 +573,7 @@ function deliveryFields(d: Record<string, any>) {
       <label class="check"><input type="radio" name="kind" value="delivery"${d.kind === 'delivery' ? ' checked' : ''} /> Final delivery: the client downloads the files and leaves a review</label>
     </fieldset>
     <label class="check"><input type="checkbox" name="allow_download"${d.allow_download !== false ? ' checked' : ''} /> Allow downloads</label>
-    <p class="hint">When off, files are view only: shown with the client’s name as a watermark, with no saving, printing or downloading, and hidden when the client switches away or opens a screenshot tool. No website can block screenshots completely, but this makes copies hard to take and marks them.</p>
+    <p class="hint">When off, files are view only: shown clean, with no watermark, and with no saving, printing or downloading. They’re hidden when the client switches away or opens a screenshot tool. No website can block screenshots completely, especially on phones, but this makes copies hard to take.</p>
     <div class="field"><label for="c-expires">Link stops working on</label><input id="c-expires" name="expires_at" type="date" value="${attr(d.expires_at ? d.expires_at.slice(0, 10) : '')}" /><p class="hint">Optional. Leave empty to keep the link working.</p></div>`;
 }
 
