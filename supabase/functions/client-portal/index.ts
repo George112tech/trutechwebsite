@@ -11,15 +11,20 @@
 //   POST { action: "pay", t, email, name?, return_url }
 //                                                → starts a checkout
 //   POST { action: "verify", t, pay? }           → checks whether it was paid
+//   POST from Paystack (x-paystack-signature) or SeevPlus (X-Seev-Signature)
+//                                                → webhook: a payment finished
 //
 // Paid downloads: on a final delivery the admin can ask for a fixed amount
 // through Paystack or SeevPlus. Until the provider itself says the payment
 // succeeded (asked server to server, with the secret key, for at least the
 // amount due, in GHS), no download link leaves this function: the Google
 // Drive links are held back and the uploaded files are sent as previews only.
-// The browser is never trusted about a payment. The secret keys are the ones
-// saved in the admin (Settings); the PAYSTACK_SECRET_KEY and
-// SEEVPLUS_SECRET_KEY function secrets are the fallback.
+// The browser is never trusted about a payment, and neither is a webhook: a
+// correctly signed webhook only makes this function ask the provider again,
+// so a replayed or forged one can never unlock anything that isn't paid.
+// The keys are the ones saved in the admin (Settings); the PAYSTACK_SECRET_KEY,
+// SEEVPLUS_SECRET_KEY and SEEVPLUS_WEBHOOK_SECRET function secrets are the
+// fallback.
 //
 // Deployed with verify_jwt off: the token in the link is the credential.
 import { createClient } from 'npm:@supabase/supabase-js@2.117.2';
@@ -135,10 +140,11 @@ async function ownerWhatsapp(): Promise<string> {
 
 /* ---------- payments ---------- */
 
-async function secretKey(provider: Provider): Promise<string | null> {
-  const { data } = await db.rpc('site_get_payment_key', { p_provider: provider });
-  return (data as string) || Deno.env.get(provider === 'paystack' ? 'PAYSTACK_SECRET_KEY' : 'SEEVPLUS_SECRET_KEY') || null;
+async function savedSecret(name: string): Promise<string | null> {
+  const { data } = await db.rpc('site_get_payment_secret', { p_name: name });
+  return (data as string) || Deno.env.get(name.toUpperCase()) || null;
 }
+const secretKey = (provider: Provider) => savedSecret(`${provider}_secret_key`);
 
 // The useful part of a SeevPlus reply, wherever they put it.
 function seevPayload(body: any) {
@@ -364,6 +370,77 @@ async function verifyPayment(req: Request, body: Record<string, unknown>) {
   return json(req, 200, { paid: await checkOpenPayments(d) });
 }
 
+/* ---------- webhooks ---------- */
+
+async function hmacHex(hash: 'SHA-256' | 'SHA-512', secret: string, text: string) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(text)));
+  return Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+function sameText(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+const webhookReply = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+/** Checks the checkout a webhook is about with its provider (never trusting the webhook itself). */
+async function checkByReference(provider: Provider, reference: string) {
+  const { data: row } = await db
+    .from('site_delivery_payments')
+    .select('id, delivery_id, provider, amount, reference, status')
+    .eq('provider', provider)
+    .eq('reference', reference)
+    .maybeSingle();
+  // Not one of ours (for example a payment on another site with the same
+  // account): acknowledged so the provider doesn't keep sending it.
+  if (!row) return webhookReply(200, { received: true, ignored: 'unknown reference' });
+  const paid = await checkPayment(row as Payment);
+  return webhookReply(200, { received: true, paid });
+}
+
+// Paystack signs the raw body with the account's secret key (HMAC-SHA512).
+async function paystackWebhook(req: Request, raw: string) {
+  const key = await secretKey('paystack');
+  if (!key) return webhookReply(503, { error: 'not set up' });
+  const given = (req.headers.get('x-paystack-signature') ?? '').toLowerCase();
+  if (!sameText(await hmacHex('SHA-512', key, raw), given)) return webhookReply(401, { error: 'bad signature' });
+  let event: { event?: string; data?: { reference?: unknown } } = {};
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return webhookReply(400, { error: 'bad body' });
+  }
+  const reference = String(event?.data?.reference ?? '');
+  if (!/^charge\./.test(String(event?.event ?? '')) || !/^TT-[0-9a-f]{32}$/.test(reference)) {
+    return webhookReply(200, { received: true, ignored: 'not a payment for this site' });
+  }
+  return await checkByReference('paystack', reference);
+}
+
+// SeevPlus signs "timestamp.body" with the webhook signing secret
+// (X-Seev-Signature: v1=<hex HMAC-SHA256>), within 5 minutes of the timestamp.
+async function seevplusWebhook(req: Request, raw: string) {
+  const secret = await savedSecret('seevplus_webhook_secret');
+  if (!secret) return webhookReply(503, { error: 'not set up' });
+  const ts = req.headers.get('X-Seev-Timestamp') ?? '';
+  const given = req.headers.get('X-Seev-Signature') ?? '';
+  if (!/^\d+$/.test(ts) || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return webhookReply(401, { error: 'bad signature' });
+  if (!sameText(`v1=${await hmacHex('SHA-256', secret, `${ts}.${raw}`)}`, given)) return webhookReply(401, { error: 'bad signature' });
+  let event: any = {};
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return webhookReply(400, { error: 'bad body' });
+  }
+  const tx = event?.data?.transaction ?? event?.data?.payment ?? event?.data ?? {};
+  const reference = String(tx.reference ?? tx.gatewaySessionRef ?? '');
+  if (!/^payment\./.test(String(event?.event ?? '')) || !reference) return webhookReply(200, { received: true, ignored: 'not a payment event' });
+  return await checkByReference('seevplus', reference);
+}
+
 /* ---------- the delivery ---------- */
 
 async function getDelivery(req: Request, token: string | null) {
@@ -450,12 +527,16 @@ Deno.serve(async (req) => {
   try {
     if (req.method === 'GET') return await getDelivery(req, new URL(req.url).searchParams.get('t'));
     if (req.method === 'POST') {
+      const raw = await req.text();
+      if (req.headers.has('x-paystack-signature')) return await paystackWebhook(req, raw);
+      if (req.headers.has('X-Seev-Signature')) return await seevplusWebhook(req, raw);
       let body: Record<string, unknown>;
       try {
-        body = await req.json();
+        body = JSON.parse(raw);
       } catch {
         return json(req, 400, { error: 'bad_request' });
       }
+      if (!body || typeof body !== 'object') return json(req, 400, { error: 'bad_request' });
       if (body.action === 'pay') return await startPayment(req, body);
       if (body.action === 'verify') return await verifyPayment(req, body);
       return await postReview(req, body);

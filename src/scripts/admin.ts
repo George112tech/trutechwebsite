@@ -534,7 +534,8 @@ async function projectForm(id: string) {
 /* ---------- payments (final deliveries) ---------- */
 
 type KeyInfo = { set: boolean; last4?: string; mode?: string; updated_at?: string };
-type PayKeys = Record<'paystack' | 'seevplus', KeyInfo>;
+type SecretName = 'paystack_secret_key' | 'seevplus_secret_key' | 'seevplus_webhook_secret';
+type PayKeys = Record<SecretName, KeyInfo>;
 const PROVIDERS: Record<string, string> = { paystack: 'Paystack', seevplus: 'SeevPlus' };
 const ghs = (n: unknown) => `GHS ${Number(n).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -543,6 +544,91 @@ const ghs = (n: unknown) => `GHS ${Number(n).toLocaleString('en-GH', { minimumFr
 async function paymentKeys(): Promise<PayKeys | null> {
   const { data, error } = await sb.rpc('site_payment_keys');
   return error || !data ? null : (data as PayKeys);
+}
+
+/** One saved-or-not secret with its form. */
+function secretForm(name: SecretName, info: KeyInfo | undefined, label: string, placeholder: string, where: string) {
+  const state = info?.set
+    ? `Saved · ends in ${esc(info.last4 ?? '')}${info.mode === 'live' ? ' · <strong>live</strong>' : info.mode === 'test' ? ' · test key: no real money is taken' : ''}${info.updated_at ? ` · ${date(info.updated_at)}` : ''}`
+    : 'Not added yet';
+  return `<form class="paykey" data-secret="${name}" novalidate>
+    <div class="field"><label for="ps-${name}">${label}</label>
+      <input id="ps-${name}" name="secret" type="password" autocomplete="off" spellcheck="false" placeholder="${attr(placeholder)}" />
+      <p class="hint"><span class="pill ${info?.set ? (info.mode === 'test' ? 'warn' : 'good') : 'muted'}">${state}</span> ${where}</p></div>
+    <p class="error" role="alert" data-key-error hidden></p>
+    <div class="actions"><button class="btn btn-ghost btn-sm" type="submit">${info?.set ? 'Replace' : 'Save'}</button>${info?.set ? `<button class="btn btn-ghost btn-sm" type="button" data-remove-secret>Remove</button>` : ''}</div>
+  </form>`;
+}
+
+/** The webhook address to paste into a provider's dashboard, with a Copy button. */
+const webhookBox = (provider: string) => `<div class="field"><span class="label">${provider} webhook address</span>
+    <div class="linkbox"><code data-hook>${esc(CLIENT_PORTAL_URL)}</code><div class="actions"><button class="btn btn-ghost btn-sm" type="button" data-copy-hook>Copy</button></div></div></div>`;
+
+function paymentSettings(keys: PayKeys) {
+  return `
+    <div class="provider">
+      <h3>Paystack</h3>
+      ${secretForm('paystack_secret_key', keys.paystack_secret_key, 'Live secret key', 'sk_live_…', 'In Paystack: Settings → API Keys & Webhooks → <strong>Live Secret Key</strong>. Not the public key (pk_live_).')}
+      ${webhookBox('Paystack')}
+      <p class="hint">Paste it in Paystack: Settings → API Keys & Webhooks → <strong>Live Webhook URL</strong>. Paystack signs its webhooks with your secret key, so there’s nothing else to copy.</p>
+      <p class="note-warn">Paystack allows <strong>one</strong> webhook address per account. If this Paystack account is also used by TRU DATA, don’t replace TRU DATA’s address: payments here are still confirmed when the client comes back from paying, when they open their link again, and with “Check for payment”.</p>
+    </div>
+    <div class="provider">
+      <h3>SeevPlus</h3>
+      ${secretForm('seevplus_secret_key', keys.seevplus_secret_key, 'Live secret key', 'Paste the live secret key', 'In SeevPlus: Developer → API keys → the <strong>live secret</strong> (server) key.')}
+      ${webhookBox('SeevPlus')}
+      <p class="hint">In SeevPlus: Developer → Webhooks → add this address, for the <strong>payment.succeeded</strong> and <strong>payment.failed</strong> events. Then copy the webhook’s <strong>signing secret</strong> into the box below.</p>
+      ${secretForm('seevplus_webhook_secret', keys.seevplus_webhook_secret, 'Webhook signing secret', 'Paste the signing secret', 'SeevPlus shows it when you add the webhook.')}
+    </div>
+    <p class="hint">Webhooks let a payment unlock the download even if the client closes the page before coming back. A webhook never unlocks anything by itself: the server asks Paystack or SeevPlus again before it does.</p>`;
+}
+
+const SECRET_LABELS: Record<SecretName, string> = {
+  paystack_secret_key: 'Paystack secret key',
+  seevplus_secret_key: 'SeevPlus secret key',
+  seevplus_webhook_secret: 'SeevPlus signing secret',
+};
+
+function wirePaymentSettings() {
+  const box = main().querySelector<HTMLElement>('[data-paykeys]');
+  if (!box) return;
+  box.addEventListener('submit', async (e) => {
+    const form = (e.target as HTMLElement).closest<HTMLFormElement>('[data-secret]');
+    if (!form) return;
+    e.preventDefault();
+    const name = form.dataset.secret as SecretName;
+    const input = $<HTMLInputElement>('[name="secret"]', form);
+    const problem = $('[data-key-error]', form);
+    const secret = input.value.trim();
+    if (!secret) return Object.assign(problem, { hidden: false, textContent: 'Paste it first.' });
+    if (name.endsWith('_secret_key') && /^pk_/.test(secret)) return Object.assign(problem, { hidden: false, textContent: 'That’s the public key. Paste the secret key (it starts with sk_).' });
+    const { error: err } = await sb.rpc('site_set_payment_secret', { p_name: name, p_secret: secret });
+    input.value = '';
+    if (err) return Object.assign(problem, { hidden: false, textContent: friendly(err) });
+    toast(`${SECRET_LABELS[name]} saved.`);
+    route();
+  });
+  box.addEventListener('click', async (e) => {
+    const el = e.target as HTMLElement;
+    if (el.matches('[data-copy-hook]')) {
+      const code = el.closest('.linkbox')!.querySelector<HTMLElement>('[data-hook]')!;
+      try {
+        await navigator.clipboard.writeText(code.textContent ?? '');
+        toast('Webhook address copied.');
+      } catch {
+        getSelection()?.selectAllChildren(code);
+        toast('Select the address and copy it.');
+      }
+    }
+    if (el.matches('[data-remove-secret]')) {
+      const name = el.closest<HTMLFormElement>('[data-secret]')!.dataset.secret as SecretName;
+      if (!confirm(`Remove the ${SECRET_LABELS[name]}? ${name.endsWith('_secret_key') ? 'Clients won’t be able to start a payment with it until you add a key again.' : 'Its webhooks will be refused until you add it again.'}`)) return;
+      const { error } = await sb.rpc('site_remove_payment_secret', { p_name: name });
+      if (error) return toast(friendly(error), true);
+      toast(`${SECRET_LABELS[name]} removed.`);
+      route();
+    }
+  });
 }
 
 /* ---------- client work ---------- */
@@ -576,7 +662,7 @@ async function clientList() {
 
 function deliveryFields(d: Record<string, any>, keys: PayKeys | null) {
   const provider = (key: 'paystack' | 'seevplus') =>
-    `<label class="check"><input type="radio" name="pay_provider" value="${key}"${d.pay_provider === key ? ' checked' : ''}${keys?.[key].set || d.pay_provider === key ? '' : ' disabled'} /> ${PROVIDERS[key]}${keys?.[key].set ? '' : ' <span class="muted">(add its secret key in Settings first)</span>'}</label>`;
+    `<label class="check"><input type="radio" name="pay_provider" value="${key}"${d.pay_provider === key ? ' checked' : ''}${keys?.[`${key}_secret_key`]?.set || d.pay_provider === key ? '' : ' disabled'} /> ${PROVIDERS[key]}${keys?.[`${key}_secret_key`]?.set ? '' : ' <span class="muted">(add its secret key in Settings first)</span>'}</label>`;
   const payment = keys
     ? `<fieldset class="field pay" data-pay${d.kind === 'delivery' ? '' : ' hidden'}><legend>Payment before download</legend>
       <label class="check"><input type="radio" name="pay_provider" value=""${d.pay_provider ? '' : ' checked'} /> No payment: the client downloads straight away</label>
@@ -1098,43 +1184,10 @@ async function settingsForm() {
       <div class="actions sticky-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
     </form>
     <section class="card panel" data-paykeys><h2>Online payments</h2>
-      <p class="hint">For final deliveries where the client pays before downloading (Client work → a link → Details). Paste each provider’s <strong>secret key</strong> here once. It’s stored on the server, used only there, and never shown again.</p>
-      ${
-        keys
-          ? (['paystack', 'seevplus'] as const)
-              .map((k) => {
-                const info = keys[k];
-                const state = info.set
-                  ? `Saved${info.last4 ? ` · ends in ${esc(info.last4)}` : ''}${info.mode === 'live' ? ' · live key' : info.mode === 'test' ? ' · test key: no real money is taken' : ''}${info.updated_at ? ` · ${date(info.updated_at)}` : ''}`
-                  : 'Not added yet';
-                return `<form class="paykey" data-paykey="${k}" novalidate>
-            <div class="field"><label for="pk-${k}">${PROVIDERS[k]} secret key</label>
-              <input id="pk-${k}" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="${k === 'paystack' ? 'sk_live_…' : 'Paste the secret key'}" />
-              <p class="hint"><span class="pill ${info.set ? 'good' : 'muted'}">${state}</span> ${k === 'paystack' ? 'In Paystack: Settings → API Keys & Webhooks → Secret Key.' : 'In SeevPlus: Developer → API keys → the secret (server) key.'}</p></div>
-            <p class="error" role="alert" data-key-error hidden></p>
-            <div class="actions"><button class="btn btn-ghost btn-sm" type="submit">${info.set ? 'Replace key' : 'Save key'}</button></div>
-          </form>`;
-              })
-              .join('')
-          : '<p class="note-warn">Online payments aren’t switched on yet: the database update for payments hasn’t been run on Supabase.</p>'
-      }
+      <p class="hint">For final deliveries where the client pays before downloading (Client work → a link → Details). Keys are stored on the server, used only there, and never shown again: only their last 4 characters.</p>
+      ${keys ? paymentSettings(keys) : '<p class="note-warn">Online payments aren’t switched on yet: the database update for payments hasn’t been run on Supabase.</p>'}
     </section>`;
-  main().querySelectorAll<HTMLFormElement>('[data-paykey]').forEach((keyForm) =>
-    keyForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const provider = keyForm.dataset.paykey!;
-      const input = $<HTMLInputElement>('[name="key"]', keyForm);
-      const problem = $('[data-key-error]', keyForm);
-      const secret = input.value.trim();
-      if (!secret) return Object.assign(problem, { hidden: false, textContent: 'Paste the secret key first.' });
-      if (/^pk_/.test(secret)) return Object.assign(problem, { hidden: false, textContent: 'That’s the public key. Paste the secret key (it starts with sk_).' });
-      const { error: err } = await sb.rpc('site_set_payment_key', { p_provider: provider, p_secret: secret });
-      input.value = '';
-      if (err) return Object.assign(problem, { hidden: false, textContent: friendly(err) });
-      toast(`${PROVIDERS[provider]} key saved.`);
-      route();
-    }),
-  );
+  wirePaymentSettings();
   // Each photo is saved on its own, straight after upload, so it never waits
   // for the rest of the form.
   const photoNames: Record<string, string> = { photo: 'Profile photo', aboutPhoto: 'About photo' };
