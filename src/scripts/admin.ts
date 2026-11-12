@@ -2,7 +2,7 @@
 // settings and account. Everything is stored in Supabase; row level security
 // only lets accounts listed in site_admins change anything.
 import { createClient, type Session } from '@supabase/supabase-js';
-import { CENTRED, photoPos, photoPosStyle, STATUSES, SUPABASE_ANON_KEY, SUPABASE_URL, type PhotoPos } from '../lib/content';
+import { CENTRED, CLIENT_PORTAL_URL, photoPos, photoPosStyle, STATUSES, SUPABASE_ANON_KEY, SUPABASE_URL, type PhotoPos } from '../lib/content';
 import { esc } from '../lib/render';
 import { DEFAULTS, GROUPS, type Field } from '../lib/texts';
 
@@ -531,12 +531,26 @@ async function projectForm(id: string) {
   });
 }
 
+/* ---------- payments (final deliveries) ---------- */
+
+type KeyInfo = { set: boolean; last4?: string; mode?: string; updated_at?: string };
+type PayKeys = Record<'paystack' | 'seevplus', KeyInfo>;
+const PROVIDERS: Record<string, string> = { paystack: 'Paystack', seevplus: 'SeevPlus' };
+const ghs = (n: unknown) => `GHS ${Number(n).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Which secret keys are saved, or null when the database isn't set up for
+    payments yet (supabase/migrations/…_delivery_payments.sql). */
+async function paymentKeys(): Promise<PayKeys | null> {
+  const { data, error } = await sb.rpc('site_payment_keys');
+  return error || !data ? null : (data as PayKeys);
+}
+
 /* ---------- client work ---------- */
 
 async function clientList() {
   const { data, error } = await sb
     .from('site_deliveries')
-    .select('id, client_name, title, kind, status, active, created_at, site_delivery_files(count), site_delivery_links(count), site_delivery_reviews(count)')
+    .select('*, site_delivery_files(count), site_delivery_links(count), site_delivery_reviews(count)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   const rows = data ?? [];
@@ -552,7 +566,7 @@ async function clientList() {
               const tone = d.status === 'changes_requested' ? 'warn' : d.status === 'approved' || d.status === 'delivered' ? 'good' : '';
               return `<li><a class="row no-thumb" href="#/clients/${d.id}">
                 <span><strong>${esc(d.title)}</strong><small>${esc(d.client_name)} · ${d.kind === 'delivery' ? 'Final delivery' : 'For review'} · ${files} file${files === 1 ? '' : 's'} · ${date(d.created_at)}</small></span>
-                <span class="pills">${d.active ? '' : '<span class="pill muted">Link off</span>'}${reviews ? `<span class="pill">${reviews} review${reviews === 1 ? '' : 's'}</span>` : ''}<span class="pill ${tone}">${DELIVERY_STATUS[d.status] ?? d.status}</span></span>
+                <span class="pills">${d.active ? '' : '<span class="pill muted">Link off</span>'}${d.kind === 'delivery' && d.pay_provider ? (d.paid_at ? '<span class="pill good">Paid</span>' : '<span class="pill warn">Awaiting payment</span>') : ''}${reviews ? `<span class="pill">${reviews} review${reviews === 1 ? '' : 's'}</span>` : ''}<span class="pill ${tone}">${DELIVERY_STATUS[d.status] ?? d.status}</span></span>
               </a></li>`;
             })
             .join('')}</ul>`
@@ -560,7 +574,18 @@ async function clientList() {
     }`;
 }
 
-function deliveryFields(d: Record<string, any>) {
+function deliveryFields(d: Record<string, any>, keys: PayKeys | null) {
+  const provider = (key: 'paystack' | 'seevplus') =>
+    `<label class="check"><input type="radio" name="pay_provider" value="${key}"${d.pay_provider === key ? ' checked' : ''}${keys?.[key].set || d.pay_provider === key ? '' : ' disabled'} /> ${PROVIDERS[key]}${keys?.[key].set ? '' : ' <span class="muted">(add its secret key in Settings first)</span>'}</label>`;
+  const payment = keys
+    ? `<fieldset class="field pay" data-pay${d.kind === 'delivery' ? '' : ' hidden'}><legend>Payment before download</legend>
+      <label class="check"><input type="radio" name="pay_provider" value=""${d.pay_provider ? '' : ' checked'} /> No payment: the client downloads straight away</label>
+      ${provider('paystack')}
+      ${provider('seevplus')}
+      <div class="field" data-pay-amount${d.pay_provider ? '' : ' hidden'}><label for="c-amount">Amount the client pays (GHS)</label><input id="c-amount" name="pay_amount" type="number" inputmode="decimal" min="1" max="100000" step="0.01" value="${attr(d.pay_amount ?? '')}" placeholder="e.g. 150" />
+        <p class="hint">The client pays exactly this amount; the payment provider takes its fee out of it. The download buttons stay locked until the provider confirms the payment.</p></div>
+    </fieldset>`
+    : '';
   return `
     <div class="two">
       <div class="field"><label for="c-name">Client name</label><textarea class="grow" rows="1" id="c-name" name="client_name" required maxlength="120">${attr(d.client_name)}</textarea></div>
@@ -572,40 +597,73 @@ function deliveryFields(d: Record<string, any>) {
       <label class="check"><input type="radio" name="kind" value="review"${d.kind !== 'delivery' ? ' checked' : ''} /> Review: the client approves the work or asks for changes</label>
       <label class="check"><input type="radio" name="kind" value="delivery"${d.kind === 'delivery' ? ' checked' : ''} /> Final delivery: the client downloads the files and leaves a review</label>
     </fieldset>
+    ${payment}
     <label class="check"><input type="checkbox" name="allow_download"${d.allow_download !== false ? ' checked' : ''} /> Allow downloads</label>
-    <p class="hint">When off, files are view only: shown clean, with no watermark, and with no saving, printing or downloading. They’re hidden when the client switches away or opens a screenshot tool. No website can block screenshots completely, especially on phones, but this makes copies hard to take.</p>
+    <p class="hint">When off, files are view only: shown clean, with no saving, printing or downloading. When the client switches away, opens a screenshot tool or presses the screenshot keys, a watermark with their name covers the files. No website can block screenshots completely, especially on phones, but this makes copies hard to take.</p>
     <div class="field"><label for="c-expires">Link stops working on</label><input id="c-expires" name="expires_at" type="date" value="${attr(d.expires_at ? d.expires_at.slice(0, 10) : '')}" /><p class="hint">Optional. Leave empty to keep the link working.</p></div>`;
+}
+
+/** Shows the payment choice only for final deliveries, and the amount only with a provider. */
+function wireDelivery(form: HTMLFormElement) {
+  const sync = () => {
+    const data = new FormData(form);
+    const pay = form.querySelector<HTMLElement>('[data-pay]');
+    if (!pay) return;
+    pay.hidden = data.get('kind') !== 'delivery';
+    $('[data-pay-amount]', pay).hidden = !data.get('pay_provider');
+  };
+  form.addEventListener('change', sync);
+  sync();
 }
 
 function readDelivery(form: HTMLFormElement) {
   const data = new FormData(form);
   const expires = String(data.get('expires_at') ?? '');
+  const kind = String(data.get('kind')) === 'delivery' ? 'delivery' : 'review';
+  // Payment is only for final deliveries. Without the payment fields (the
+  // database isn't set up for payments yet) the columns are left alone.
+  const provider = kind === 'delivery' ? String(data.get('pay_provider') ?? '') : '';
+  const payment: { pay_provider?: string | null; pay_amount?: number | null } = form.querySelector('[data-pay]')
+    ? { pay_provider: provider || null, pay_amount: provider ? Math.round(Number(data.get('pay_amount')) * 100) / 100 : null }
+    : {};
   return {
     client_name: oneLine(data.get('client_name')),
     client_phone: String(data.get('client_phone')).replace(/\D/g, '') || null,
     title: oneLine(data.get('title')),
     message: String(data.get('message')).trim(),
-    kind: String(data.get('kind')) === 'delivery' ? 'delivery' : 'review',
-    allow_download: data.get('allow_download') === 'on',
+    kind,
+    // Paying is for downloading, so a paid delivery always allows downloads.
+    allow_download: data.get('allow_download') === 'on' || Boolean(provider),
     expires_at: expires ? new Date(`${expires}T23:59:59`).toISOString() : null,
+    ...payment,
   };
 }
 
+/** What's wrong with the details, or '' when they can be saved. */
+function deliveryProblem(row: ReturnType<typeof readDelivery>) {
+  if (!row.client_name || !row.title) return 'Add the client’s name and the project title.';
+  if (row.pay_provider && !(Number(row.pay_amount) >= 1 && Number(row.pay_amount) <= 100000)) return 'Enter the amount the client pays: GHS 1 or more.';
+  return '';
+}
+
 async function clientDetail(id: string) {
+  const keys = await paymentKeys();
   if (id === 'new') {
     main().innerHTML = `
       <a class="crumb" href="#/clients">← Client work</a>
       <div class="head"><h1>New client link</h1></div>
-      <form data-delivery novalidate><section class="card panel">${deliveryFields({ kind: 'review', allow_download: true })}</section>
+      <form data-delivery novalidate><section class="card panel">${deliveryFields({ kind: 'review', allow_download: true }, keys)}</section>
         <p class="hint">Next you’ll add the files: upload them here, or add Google Drive download links for each format.</p>
         <p class="error" role="alert" data-error hidden></p>
         <div class="actions"><button class="btn btn-primary" type="submit">Create link and add files</button><a class="btn btn-ghost" href="#/clients">Cancel</a></div></form>`;
     const form = $<HTMLFormElement>('[data-delivery]');
+    wireDelivery(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const row = readDelivery(form);
       const error = $('[data-error]');
-      if (!row.client_name || !row.title) return Object.assign(error, { hidden: false, textContent: 'Add the client’s name and the project title.' });
+      const problem = deliveryProblem(row);
+      if (problem) return Object.assign(error, { hidden: false, textContent: problem });
       const { data, error: err } = await sb.from('site_deliveries').insert(row).select('id').single();
       if (err) return Object.assign(error, { hidden: false, textContent: friendly(err) });
       location.hash = `#/clients/${data.id}`;
@@ -613,11 +671,13 @@ async function clientDetail(id: string) {
     return;
   }
 
-  const [{ data: d, error }, { data: files }, { data: links }, { data: reviews }] = await Promise.all([
+  const [{ data: d, error }, { data: files }, { data: links }, { data: reviews }, { data: payments }] = await Promise.all([
     sb.from('site_deliveries').select('*').eq('id', id).maybeSingle(),
     sb.from('site_delivery_files').select('*').eq('delivery_id', id).order('sort_order').order('created_at'),
     sb.from('site_delivery_links').select('*').eq('delivery_id', id).order('sort_order').order('created_at'),
     sb.from('site_delivery_reviews').select('*').eq('delivery_id', id).order('created_at', { ascending: false }),
+    // Checkouts the client started (no rows, or no table yet, is fine).
+    sb.from('site_delivery_payments').select('*').eq('delivery_id', id).order('created_at', { ascending: false }).limit(10),
   ]);
   if (error) throw error;
   if (!d) {
@@ -688,6 +748,37 @@ async function clientDetail(id: string) {
       </form>
     </section>
 
+    ${
+      keys && d.kind === 'delivery'
+        ? `<section class="card panel" data-payment><h2>Payment</h2>
+      ${
+        !d.pay_provider
+          ? '<p class="hint">No payment is asked for: the client downloads straight away. To charge for the download, choose Paystack or SeevPlus under Details.</p>'
+          : d.paid_at
+            ? `<p><span class="pill good">Paid</span> ${ghs(d.pay_amount)} · ${d.paid_reference === 'manual' ? 'marked as paid by you' : esc(PROVIDERS[d.pay_provider] ?? d.pay_provider)} · ${date(d.paid_at)}</p>
+               <p class="hint">The client can download the files.${d.paid_reference && d.paid_reference !== 'manual' ? ` Reference: ${esc(d.paid_reference.split(':').pop() ?? '')}` : ''}</p>`
+            : `<p><span class="pill warn">Waiting for payment</span> ${ghs(d.pay_amount)} through ${esc(PROVIDERS[d.pay_provider] ?? d.pay_provider)}</p>
+               <p class="hint">The download buttons are locked for the client until ${esc(PROVIDERS[d.pay_provider] ?? d.pay_provider)} confirms the payment. It’s checked when the client comes back from paying and each time they open their link.</p>`
+      }
+      ${
+        d.pay_provider
+          ? `<div class="actions">${d.paid_at ? '' : '<button class="btn btn-primary btn-sm" type="button" data-pay-check>Check for payment</button><button class="btn btn-ghost btn-sm" type="button" data-pay-mark="paid">Mark as paid</button>'}${d.paid_at && d.paid_reference === 'manual' ? '<button class="btn btn-ghost btn-sm" type="button" data-pay-mark="unpaid">Mark as not paid</button>' : ''}</div>
+             ${d.paid_at ? '' : '<p class="hint">“Mark as paid” is for a client who paid you another way, such as cash or Mobile Money.</p>'}`
+          : ''
+      }
+      ${
+        (payments ?? []).length
+          ? `<ul class="pay-log">${(payments ?? [])
+              .map(
+                (pm: any) => `<li><strong>${pm.status === 'paid' ? 'Paid' : pm.status === 'failed' ? 'Failed' : 'Started, not finished'}</strong> · ${ghs(pm.amount)} · ${esc(PROVIDERS[pm.provider] ?? pm.provider)} · ${date(pm.created_at)}${pm.payer_email ? ` · ${esc(pm.payer_email)}` : ''}${pm.error ? `<br /><span class="muted">${esc(pm.error)}</span>` : ''}</li>`,
+              )
+              .join('')}</ul>`
+          : ''
+      }
+    </section>`
+        : ''
+    }
+
     <section class="card panel"><h2>Reviews from the client</h2>
       ${
         (reviews ?? []).length
@@ -703,7 +794,7 @@ async function clientDetail(id: string) {
         .join('')}</select><p class="hint">Changes by itself when the client responds; set it here after you update the work.</p></div>
     </section>
 
-    <form class="card panel" data-delivery novalidate><h2>Details</h2>${deliveryFields(d)}
+    <form class="card panel" data-delivery novalidate><h2>Details</h2>${deliveryFields(d, keys)}
       <p class="error" role="alert" data-error hidden></p>
       <div class="actions"><button class="btn btn-primary" type="submit">Save details</button><button class="btn btn-danger" type="button" data-delete>Delete link and files</button></div>
     </form>`;
@@ -824,12 +915,46 @@ async function clientDetail(id: string) {
     toast('File removed.');
     route();
   });
+  // Payment: ask the provider again, or record a payment made another way.
+  main().querySelector('[data-payment]')?.addEventListener('click', async (e) => {
+    const el = e.target as HTMLElement;
+    if (el.matches('[data-pay-check]')) {
+      (el as HTMLButtonElement).disabled = true;
+      try {
+        const res = await fetch(CLIENT_PORTAL_URL, {
+          method: 'POST',
+          headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'verify', t: d.token }),
+        });
+        const out = await res.json();
+        if (!res.ok) throw new Error('The payment could not be checked. Try again in a moment.');
+        toast(out.paid ? 'Payment confirmed. The downloads are unlocked.' : 'No confirmed payment yet.', !out.paid);
+        if (out.paid) return route();
+      } catch (err) {
+        toast(friendly(err), true);
+      }
+      (el as HTMLButtonElement).disabled = false;
+    }
+    const mark = el.dataset.payMark;
+    if (!mark) return;
+    const paid = mark === 'paid';
+    if (!confirm(paid ? `Mark ${ghs(d.pay_amount)} as paid? The client will be able to download the files.` : 'Mark as not paid? The downloads will be locked again.')) return;
+    const { error } = await sb
+      .from('site_deliveries')
+      .update(paid ? { paid_at: new Date().toISOString(), paid_reference: 'manual' } : { paid_at: null, paid_reference: null })
+      .eq('id', id);
+    if (error) return toast(friendly(error), true);
+    toast(paid ? 'Marked as paid. The downloads are unlocked.' : 'Marked as not paid.');
+    route();
+  });
   const form = $<HTMLFormElement>('[data-delivery]');
+  wireDelivery(form);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const row = readDelivery(form);
     const error = $('[data-error]', form);
-    if (!row.client_name || !row.title) return Object.assign(error, { hidden: false, textContent: 'Add the client’s name and the project title.' });
+    const problem = deliveryProblem(row);
+    if (problem) return Object.assign(error, { hidden: false, textContent: problem });
     const { error: err } = await sb.from('site_deliveries').update(row).eq('id', id);
     if (err) return Object.assign(error, { hidden: false, textContent: friendly(err) });
     toast('Details saved.');
@@ -935,7 +1060,7 @@ function placeAboutPhoto(s: Record<string, any>) {
 }
 
 async function settingsForm() {
-  const { data, error } = await sb.from('site_settings').select('data').eq('id', 1).maybeSingle();
+  const [{ data, error }, keys] = await Promise.all([sb.from('site_settings').select('data').eq('id', 1).maybeSingle(), paymentKeys()]);
   if (error) throw error;
   const s: Record<string, any> = data?.data ?? {};
   let socials: Social[] = Array.isArray(s.socials) ? s.socials : [];
@@ -971,7 +1096,45 @@ async function settingsForm() {
         <div class="actions"><button class="btn btn-ghost btn-sm" type="button" data-add-social>+ Add social link</button></div></section>
       <p class="error" role="alert" data-error hidden></p>
       <div class="actions sticky-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
-    </form>`;
+    </form>
+    <section class="card panel" data-paykeys><h2>Online payments</h2>
+      <p class="hint">For final deliveries where the client pays before downloading (Client work → a link → Details). Paste each provider’s <strong>secret key</strong> here once. It’s stored on the server, used only there, and never shown again.</p>
+      ${
+        keys
+          ? (['paystack', 'seevplus'] as const)
+              .map((k) => {
+                const info = keys[k];
+                const state = info.set
+                  ? `Saved${info.last4 ? ` · ends in ${esc(info.last4)}` : ''}${info.mode === 'live' ? ' · live key' : info.mode === 'test' ? ' · test key: no real money is taken' : ''}${info.updated_at ? ` · ${date(info.updated_at)}` : ''}`
+                  : 'Not added yet';
+                return `<form class="paykey" data-paykey="${k}" novalidate>
+            <div class="field"><label for="pk-${k}">${PROVIDERS[k]} secret key</label>
+              <input id="pk-${k}" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="${k === 'paystack' ? 'sk_live_…' : 'Paste the secret key'}" />
+              <p class="hint"><span class="pill ${info.set ? 'good' : 'muted'}">${state}</span> ${k === 'paystack' ? 'In Paystack: Settings → API Keys & Webhooks → Secret Key.' : 'In SeevPlus: Developer → API keys → the secret (server) key.'}</p></div>
+            <p class="error" role="alert" data-key-error hidden></p>
+            <div class="actions"><button class="btn btn-ghost btn-sm" type="submit">${info.set ? 'Replace key' : 'Save key'}</button></div>
+          </form>`;
+              })
+              .join('')
+          : '<p class="note-warn">Online payments aren’t switched on yet: the database update for payments hasn’t been run on Supabase.</p>'
+      }
+    </section>`;
+  main().querySelectorAll<HTMLFormElement>('[data-paykey]').forEach((keyForm) =>
+    keyForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const provider = keyForm.dataset.paykey!;
+      const input = $<HTMLInputElement>('[name="key"]', keyForm);
+      const problem = $('[data-key-error]', keyForm);
+      const secret = input.value.trim();
+      if (!secret) return Object.assign(problem, { hidden: false, textContent: 'Paste the secret key first.' });
+      if (/^pk_/.test(secret)) return Object.assign(problem, { hidden: false, textContent: 'That’s the public key. Paste the secret key (it starts with sk_).' });
+      const { error: err } = await sb.rpc('site_set_payment_key', { p_provider: provider, p_secret: secret });
+      input.value = '';
+      if (err) return Object.assign(problem, { hidden: false, textContent: friendly(err) });
+      toast(`${PROVIDERS[provider]} key saved.`);
+      route();
+    }),
+  );
   // Each photo is saved on its own, straight after upload, so it never waits
   // for the rest of the form.
   const photoNames: Record<string, string> = { photo: 'Profile photo', aboutPhoto: 'About photo' };

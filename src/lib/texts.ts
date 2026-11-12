@@ -150,7 +150,7 @@ const PRIVACY = `This policy explains what personal information {brand} (“we�
 
 - The website has no user accounts, advertising or analytics trackers, and it doesn’t set cookies.
 - If you switch between light and dark mode, your choice is saved in your own browser only.
-- Like any website, the services that deliver it receive technical information such as your IP address and browser type: GitHub Pages (hosting) and Supabase (portfolio content and images). Fonts are served from this website, not from a third party.
+- Like any website, the services that deliver it receive technical information such as your IP address and browser type: GitHub Pages or Cloudflare Pages (hosting) and Supabase (portfolio content and images). Fonts are served from this website, not from a third party.
 
 ## When you contact us
 
@@ -163,7 +163,8 @@ To deliver and review your work, we keep:
 - your name, and your WhatsApp number if you give it to us;
 - the project title, our messages to you and the files we prepare for you;
 - the feedback, approvals and ratings you send through your private link;
-- when your private link was first opened.
+- when your private link was first opened;
+- if you pay online for your files: your email address, the amount and the payment reference. Your card or Mobile Money details are entered on the payment provider’s own page; we never see or store them.
 
 This information is stored with Supabase, our database and file storage provider, on servers in London, United Kingdom. Your files can only be opened through your private link, which we can switch off, replace or set to expire, and only the {brand} administrator can manage them.
 
@@ -178,7 +179,7 @@ We don’t sell personal information or use it for advertising.
 
 ## Who we share it with
 
-Only the service providers that run this website and our work: Supabase (database and files), GitHub (website hosting) and WhatsApp or email when you use them to talk to us. We may also share information when the law requires it.
+Only the service providers that run this website and our work: Supabase (database and files), GitHub and Cloudflare (website hosting), WhatsApp or email when you use them to talk to us, and Paystack or SeevPlus when you pay online (they receive your name, email address and the amount, to take the payment). We may also share information when the law requires it.
 
 ## How long we keep it
 
@@ -395,7 +396,7 @@ export const GROUPS: Group[] = [
       f('terms.updated', 'Terms: last updated', '21 October 2026'),
       f('terms.body', 'Terms: text', TERMS, 'md', 'Use ## for a heading, - for a list item, **bold** and [link text](https://…). {brand}, {email}, {phone} and {location} are filled in from Settings.'),
       f('privacy.title', 'Privacy: title', 'Privacy Policy'),
-      f('privacy.updated', 'Privacy: last updated', '23 October 2026'),
+      f('privacy.updated', 'Privacy: last updated', '11 November 2026'),
       f('privacy.body', 'Privacy: text', PRIVACY, 'md', 'Use ## for a heading, - for a list item, **bold** and [link text](https://…). {brand}, {email}, {phone} and {location} are filled in from Settings.'),
     ],
   },
@@ -420,6 +421,21 @@ export const GROUPS: Group[] = [
       f('client.downloadsTitle', 'Download links: heading', 'Download your files'),
       f('client.downloadsIntro', 'Download links: text', 'Each format downloads on its own. Pick the ones you need.', 'text'),
       f('client.downloadAs', 'Download links: button ({format} is the file format)', 'Download {format}'),
+      f('client.payTitle', 'Paid downloads: title ({amount} is the amount)', 'Pay {amount} to download your files'),
+      f('client.payText', 'Paid downloads: text', 'Your files are ready. The download buttons unlock as soon as your payment is confirmed.', 'text'),
+      f('client.payLabel', 'Paid downloads: label on each file', 'pay to download'),
+      f('client.payEmail', 'Paid downloads: email field', 'Your email (for the payment receipt)'),
+      f('client.payButton', 'Paid downloads: pay button ({provider} is Paystack or SeevPlus)', 'Pay {amount} with {provider}'),
+      f('client.paySecure', 'Paid downloads: note under the button', 'You pay on {provider}’s secure page and come straight back here.', 'text'),
+      f('client.payStarting', 'Paid downloads: while the payment page opens', 'Opening {provider}…'),
+      f('client.payDone', 'Paid downloads: payment confirmed', 'Payment confirmed. Your files are ready to download.', 'text'),
+      f('client.payNotYet', 'Paid downloads: no payment found', 'We couldn’t confirm a payment yet. If you paid, wait a moment and check again. If not, you can try again.', 'text'),
+      f('client.payCheck', 'Paid downloads: check again button', 'Check again'),
+      f('client.payPaid', 'Paid downloads: note after paying', 'Paid: {amount}'),
+      f('client.payBadEmail', 'Paid downloads: email problem', 'Enter a valid email address.'),
+      f('client.payBusy', 'Paid downloads: too many tries', 'Too many payment attempts. Please wait a little and try again.', 'text'),
+      f('client.payFailed', 'Paid downloads: payment page problem', 'The payment page couldn’t be opened. Please try again in a moment.', 'text'),
+      f('client.payOpenLink', 'Paid downloads: came back without the private link', 'If you paid, open your private link again to download your files.', 'text'),
       f('client.viewPdf', 'PDF button', 'View PDF'),
       f('client.viewOnly', 'View-only label', 'view only'),
       f('client.viewOnlyNote', 'View-only file note', 'View only: you’ll receive this file once the work is approved.', 'text'),
