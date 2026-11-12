@@ -60,11 +60,26 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
         <span class="muted" data-field="date"></span>
       </div>
       <p class="lead message" data-field="message"></p>
+      <div class="notice" data-notice role="status" hidden>
+        <p data-notice-text></p>
+        <button class="btn btn-ghost" type="button" data-pay-check hidden>{t('client.payCheck')}</button>
+      </div>
 
       <section class="downloads" data-downloads hidden>
-        <h2 class="h2">{t('client.downloadsTitle')}</h2>
-        <p class="muted">{t('client.downloadsIntro')}</p>
+        <h2 class="h2" data-downloads-title>{t('client.downloadsTitle')}</h2>
+        <p class="muted" data-downloads-intro>{t('client.downloadsIntro')}</p>
+        <p class="paid" data-paid hidden></p>
         <ul class="dl-list" data-download-list></ul>
+        {/* Paid final deliveries: shown when a locked download button is pressed. */}
+        <form class="card pay-form" data-pay-form novalidate hidden>
+          <div class="field">
+            <label for="p-email">{t('client.payEmail')}</label>
+            <input id="p-email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required />
+          </div>
+          <p class="error" role="alert" data-pay-error hidden></p>
+          <button class="btn btn-primary" type="submit" data-pay-submit></button>
+          <p class="muted pay-note" data-pay-secure></p>
+        </form>
       </section>
 
       <h2 class="h2" data-files-title>{t('client.files')}</h2>
@@ -131,6 +146,8 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
   import { esc } from '../lib/render';
 
   type FileItem = { id: string; name: string; size: number; mime: string; url: string | null; download: string | null };
+  /** url is null while a payment is due: the server keeps the link back. */
+  type DownloadLink = { id: string; format: string; label: string; url: string | null };
   type Review = { reviewer_name: string; decision: string; rating: number | null; comment: string; created_at: string };
   type Delivery = {
     client_name: string;
@@ -142,7 +159,9 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     created_at: string;
     files: FileItem[];
     /** Download links (Google Drive), one per format; only when downloads are allowed. */
-    links?: { id: string; format: string; label: string; url: string }[];
+    links?: DownloadLink[];
+    /** Paid final deliveries: what is due, and whether the provider confirmed it. */
+    payment?: { required: boolean; paid?: boolean; provider?: string; amount?: number; currency?: string };
     reviews: Review[];
     whatsapp: string;
   };
@@ -182,25 +201,113 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
             ? 'audio'
             : 'file';
 
-  const token = location.hash.slice(1);
+  // Coming back from Paystack or SeevPlus (…/client/?pay=<id>): the private
+  // link was kept in this browser before leaving, because the providers send
+  // people back without the part after #.
+  // Just the id: a provider may tack its own "?reference=…" on after it.
+  const returnedFrom = (new URLSearchParams(location.search).get('pay') ?? '').match(/^[0-9a-f-]{36}/i)?.[0] ?? '';
+  const remembered = (() => {
+    try {
+      const saved = localStorage.getItem(`tt-pay:${returnedFrom}`) ?? '';
+      localStorage.removeItem(`tt-pay:${returnedFrom}`);
+      return saved;
+    } catch {
+      return '';
+    }
+  })();
+  const token = location.hash.slice(1) || (returnedFrom ? remembered : '');
+  if (returnedFrom) window.history.replaceState(null, '', location.pathname + (token ? `#${token}` : ''));
   const api = (init?: RequestInit, query = '') =>
     fetch(CLIENT_PORTAL_URL + query, { ...init, headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...init?.headers } });
 
   const DOWNLOAD_ICON =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>';
 
-  function downloadLink(l: { format: string; label: string; url: string }) {
+  const LOCK_ICON =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+
+  // A download button. While a payment is due there is no link behind it:
+  // pressing it opens the payment form instead.
+  function downloadLink(l: { format: string; label: string; url: string | null }) {
     const action = fill(W.downloadAs, { format: l.format });
-    return `<li><a class="dl" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
-      <span class="ext">${esc(l.format)}</span>
+    const inside = `<span class="ext">${esc(l.format)}</span>
       <span class="dl-text"><strong>${esc(l.label || action)}</strong>${l.label ? `<small>${esc(action)}</small>` : ''}</span>
-      <span class="dl-icon">${DOWNLOAD_ICON}</span></a></li>`;
+      <span class="dl-icon">${l.url ? DOWNLOAD_ICON : LOCK_ICON}</span>`;
+    return l.url
+      ? `<li><a class="dl" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${inside}</a></li>`
+      : `<li><button class="dl locked" type="button" data-pay-open>${inside}</button></li>`;
   }
 
-  function fileCard(f: FileItem, allowDownload: boolean) {
+  const PROVIDERS: Record<string, string> = { paystack: 'Paystack', seevplus: 'SeevPlus' };
+  const money = (amount: number, currency = 'GHS') => `${currency} ${amount.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const notice = (text: string, checkAgain = false) => {
+    $('[data-notice-text]').textContent = text;
+    $('[data-pay-check]').hidden = !checkAgain;
+    $('[data-notice]').hidden = false;
+  };
+  /** Asks the server to check with the payment provider. True when it is paid. */
+  async function confirmPayment(pay?: string) {
+    try {
+      const res = await api({ method: 'POST', body: JSON.stringify({ action: 'verify', t: token, pay }) });
+      return res.ok && (await res.json()).paid === true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Paid final delivery, not paid yet: the download buttons open this form,
+  // which sends the client to the provider's own payment page.
+  function setupPayment(d: Delivery) {
+    const pay = d.payment!;
+    const provider = PROVIDERS[pay.provider ?? ''] ?? '';
+    const amount = money(pay.amount ?? 0, pay.currency);
+    const form = $<HTMLFormElement>('[data-pay-form]');
+    const submit = $<HTMLButtonElement>('[data-pay-submit]');
+    const error = $('[data-pay-error]');
+    const label = fill(W.payButton, { amount, provider });
+    submit.textContent = label;
+    $('[data-pay-secure]').textContent = fill(W.paySecure, { provider });
+    $('[data-downloads]').addEventListener('click', (e) => {
+      if (!(e.target as HTMLElement).closest('[data-pay-open]')) return;
+      form.hidden = false;
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $<HTMLInputElement>('#p-email').focus({ preventScroll: true });
+    });
+    const problem = (text: string) => {
+      Object.assign(error, { hidden: false, textContent: text });
+      Object.assign(submit, { disabled: false, textContent: label });
+    };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = $<HTMLInputElement>('#p-email').value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return problem(W.payBadEmail);
+      error.hidden = true;
+      Object.assign(submit, { disabled: true, textContent: fill(W.payStarting, { provider }) });
+      try {
+        const res = await api({
+          method: 'POST',
+          body: JSON.stringify({ action: 'pay', t: token, email, name: d.client_name, return_url: location.origin + location.pathname }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (out.paid) return location.reload();
+        if (!res.ok || !out.checkout_url) return problem(out.error === 'bad_email' ? W.payBadEmail : out.error === 'too_many' ? W.payBusy : W.payFailed);
+        // Only ever leave for the provider's own payment page.
+        const to = new URL(out.checkout_url);
+        if (to.protocol !== 'https:' || !/(^|\.)(paystack\.com|seevplus\.com)$/.test(to.hostname)) return problem(W.payFailed);
+        try {
+          localStorage.setItem(`tt-pay:${out.payment}`, token);
+        } catch {}
+        location.assign(to.href);
+      } catch {
+        problem(W.errNetwork);
+      }
+    });
+  }
+
+  function fileCard(f: FileItem, allowDownload: boolean, payFirst = false) {
     const kind = kindOf(f);
     const url = f.url ? esc(f.url) : '';
-    if (!allowDownload) return protectedCard(f, kind, url);
+    if (!allowDownload) return protectedCard(f, kind, url, payFirst);
     const preview =
       kind === 'image' && url
         ? `<a class="preview" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${esc(f.name)}" loading="lazy" /></a>`
@@ -220,7 +327,7 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
   // links to the files themselves. Websites can't block screenshots; this
   // makes copies harder to take. Images, videos and PDFs also open full
   // screen, with the same protection.
-  function protectedCard(f: FileItem, kind: string, url: string) {
+  function protectedCard(f: FileItem, kind: string, url: string, payFirst = false) {
     const viewable = ['image', 'video', 'pdf'].includes(kind) && url;
     const preview =
       kind === 'image' && url
@@ -234,16 +341,31 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
               : `<div class="preview icon"><span class="ext">${esc(ext(f.name))}</span></div>`;
     const action = viewable
       ? `<button class="btn btn-ghost" type="button" data-view>${esc(kind === 'pdf' ? W.viewPdf : W.fullScreen)}</button>`
-      : kind === 'file'
+      : kind === 'file' && !payFirst
           ? `<p class="note">${esc(W.viewOnlyNote)}</p>`
           : '';
     const data = viewable ? ` data-kind="${kind}" data-url="${url}" data-name="${esc(f.name)}"` : '';
-    return `<article class="file card"${data}>${preview}<div class="info"><h3 class="name">${esc(f.name)}</h3><p class="muted">${esc(ext(f.name))} · ${size(f.size)} · ${esc(W.viewOnly)}</p><div class="actions">${action}</div></div></article>`;
+    return `<article class="file card"${data}>${preview}<div class="info"><h3 class="name">${esc(f.name)}</h3><p class="muted">${esc(ext(f.name))} · ${size(f.size)} · ${esc(payFirst ? W.payLabel : W.viewOnly)}</p><div class="actions">${action}</div></div></article>`;
   }
 
-  function protect() {
+  function protect(d: Delivery) {
     const shell = $('.shell');
     shell.classList.add('protected');
+    // The watermark (the client's name and today's date) stays out of the way
+    // while the client looks at the work, and covers it the moment the page
+    // may be being captured: see "shield" below and .shielded in the styles.
+    const mark = `${d.client_name} · Trutech Business · ${date(new Date().toISOString())}`.replace(/[<&'"]/g, '');
+    // One line of the watermark as a repeating tile, as wide as the text.
+    const pen = document.createElement('canvas').getContext('2d');
+    if (pen) pen.font = '700 15px Arial';
+    const width = Math.ceil((pen?.measureText(mark).width ?? mark.length * 8.5) + 36);
+    shell.style.setProperty(
+      '--wm',
+      `url("data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='56'><text x='18' y='24' fill='rgba(255,255,255,0.9)' stroke='rgba(0,0,0,0.55)' stroke-width='3' paint-order='stroke' font-family='Arial,sans-serif' font-size='15' font-weight='700'>${mark}</text></svg>`,
+      )}")`,
+    );
+    shell.style.setProperty('--wm-half', `${Math.round(width / 2)}px`);
     // Images are drawn on a canvas, so there's no image to save, drag or open
     // on its own.
     const images = new Map<string, Promise<HTMLImageElement>>();
@@ -396,8 +518,9 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     [files, viewer].forEach((el) =>
       ['contextmenu', 'dragstart', 'copy'].forEach((type) => el.addEventListener(type, (e) => e.preventDefault())),
     );
-    // Blur the files whenever the page isn't in front: switching apps, opening
-    // a screenshot or recording tool, or pressing Print Screen.
+    // Cover the files with the watermark whenever the page isn't in front:
+    // switching apps, opening a screenshot or recording tool, or pressing
+    // Print Screen or the screenshot keys.
     const shield = (on: boolean) => shell.classList.toggle('shielded', on);
     addEventListener('blur', () => {
       if (!(document.activeElement instanceof HTMLIFrameElement)) shield(true);
@@ -501,9 +624,11 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
   }
 
   async function main() {
-    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return fail(W.errIncomplete);
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return fail(returnedFrom ? W.payOpenLink : W.errIncomplete);
     let d: Delivery;
     try {
+      // Back from the payment page: have the server check it with the provider first.
+      if (/^[0-9a-f-]{36}$/i.test(returnedFrom)) await confirmPayment(returnedFrom);
       const res = await api(undefined, `?t=${encodeURIComponent(token)}`);
       if (res.status === 404) return fail(W.errInactive);
       if (!res.ok) throw new Error(String(res.status));
@@ -518,16 +643,35 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     set('message', d.message);
     document.title = `${d.title} · Trutech Business`;
     const links = d.links ?? [];
-    $('[data-downloads]').hidden = !links.length;
-    $('[data-download-list]').innerHTML = links.map(downloadLink).join('');
+    const pay = d.payment?.required ? d.payment : null;
+    // Payment due: every download button is locked, with no link behind it.
+    const payFirst = Boolean(pay && !pay.paid);
+    const amount = pay ? money(pay.amount ?? 0, pay.currency) : '';
+    const locks: DownloadLink[] = links.length ? links : [{ id: 'all', format: 'ZIP', label: W.downloadsTitle, url: null }];
+    $('[data-downloads]').hidden = !links.length && !payFirst;
+    $('[data-download-list]').innerHTML = (payFirst ? locks.map((l) => ({ ...l, url: null })) : links).map(downloadLink).join('');
+    if (payFirst) {
+      $('[data-downloads-title]').textContent = fill(W.payTitle, { amount });
+      $('[data-downloads-intro]').textContent = W.payText;
+      setupPayment(d);
+    } else if (pay) {
+      Object.assign($('[data-paid]'), { hidden: false, textContent: `✓ ${fill(W.payPaid, { amount })}` });
+    }
     // With download links and nothing uploaded, there's no empty Files list.
-    $('[data-files-title]').hidden = !d.files.length && links.length > 0;
+    $('[data-files-title]').hidden = !d.files.length && (links.length > 0 || payFirst);
     $('[data-files]').innerHTML = d.files.length
-      ? d.files.map((f) => fileCard(f, d.allow_download)).join('')
-      : links.length
+      ? d.files.map((f) => fileCard(f, d.allow_download, payFirst)).join('')
+      : links.length || payFirst
         ? ''
         : `<p class="muted">${esc(W.noFiles)}</p>`;
-    if (!d.allow_download) protect();
+    if (!d.allow_download) protect(d);
+    if (returnedFrom) notice(pay?.paid ? W.payDone : W.payNotYet, payFirst);
+    $('[data-pay-check]').addEventListener('click', async (e) => {
+      const button = e.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      if (await confirmPayment()) return location.reload();
+      button.disabled = false;
+    });
     history(d.reviews);
     setupForm(d);
     show('ready');
@@ -609,6 +753,40 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
   }
   .downloads {
     margin-bottom: 40px;
+  }
+  .notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    margin: 0 0 32px;
+    padding: 14px 18px;
+    border: 1px solid var(--amber);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .notice p {
+    margin: 0;
+    flex: 1 1 260px;
+  }
+  .paid {
+    margin: -4px 0 16px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .pay-form {
+    max-width: 520px;
+    margin-top: 16px;
+  }
+  .pay-note {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+  .dl-list :global(button.dl) {
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
   .downloads .muted {
     margin: -4px 0 16px;
@@ -901,12 +1079,26 @@ const [agreeA, agreeB = '', agreeC = ''] = t('client.agree').split(/\{terms\}|\{
     border: 0;
     background: #fff;
   }
-  .shielded :global(.v-stage) {
-    filter: blur(28px) saturate(0.4);
+  /* While the page may be being captured (see "shield" in the script), the
+     watermark covers the files: the client's name and the date in slanted
+     rows, edge to edge, over a veil. */
+  .shielded .files :global(.guarded)::after,
+  .shielded :global(.viewer)::after {
+    content: '';
+    position: absolute;
+    /* Larger than the box, so the slanted rows still reach every corner. */
+    inset: -60%;
+    z-index: 5;
+    pointer-events: none;
+    transform: rotate(-20deg);
+    background:
+      var(--wm) 0 0,
+      var(--wm) var(--wm-half) 28px,
+      rgb(0 0 0 / 0.55);
   }
-  .shielded .files :global(.preview) {
-    filter: blur(28px) saturate(0.4);
-    transition: none;
+  .shielded .files :global(.guarded),
+  .shielded :global(.viewer) {
+    overflow: hidden;
   }
   @media print {
     .protected {
